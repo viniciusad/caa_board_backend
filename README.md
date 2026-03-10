@@ -22,7 +22,7 @@ O backend precisa estar rodando para que o frontend consiga salvar os dados, reg
 
 1.  Abra o terminal (PowerShell ou Prompt de Comando) e navegue até a pasta do projeto:
     ```bash
-    cd caminho\para\CAA_Board\backend
+    cd caminho\para\caa_board_backend
     ```
 
 2.  *(Opcional, mas recomendado)* Crie e ative um ambiente virtual:
@@ -69,3 +69,4 @@ O frontend foi projetado para ser executado de forma extremamente simples, sem a
 
 *   **Os cards padrão não apareceram depois de registrar uma conta:**
     Certifique-se de que de fato executou o arquivo `python init_db.py` antes de rodar a sua aplicação com `python run.py`.
+
