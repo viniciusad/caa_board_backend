@@ -35,18 +35,31 @@ def index():
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        token = None
-        if 'Authorization' in request.headers:
-            parts = request.headers['Authorization'].split()
-            if len(parts) == 2 and parts[0] == 'Bearer':
-                token = parts[1]
+        current_user = None
         
-        if not token:
-            return jsonify({'message': 'Token is missing!'}), 401
+        if 'Authorization' in request.headers:
+            auth_header = request.headers['Authorization']
             
-        current_user = User.query.filter_by(token=token).first()
+            # 1. Suporte a Basic Auth (usuário e senha do Swagger)
+            if auth_header.startswith('Basic '):
+                try:
+                    encoded = auth_header.split(' ', 1)[1]
+                    decoded = base64.b64decode(encoded).decode('utf-8')
+                    username, password = decoded.split(':', 1)
+                    
+                    user = User.query.filter_by(username=username).first()
+                    if user and user.check_password(password):
+                        current_user = user
+                except Exception:
+                    pass
+                    
+            # 2. Suporte a Bearer Token (usado pelo Frontend)
+            elif auth_header.startswith('Bearer '):
+                token = auth_header.split(' ', 1)[1]
+                current_user = User.query.filter_by(token=token).first()
+        
         if not current_user:
-            return jsonify({'message': 'Token is invalid!'}), 401
+            return jsonify({'message': 'Autenticação inválida ou ausente!'}), 401
             
         return f(current_user, *args, **kwargs)
     return decorated
@@ -84,6 +97,35 @@ def register():
 @bp.route('/api/cards', methods=['GET'])
 @token_required
 def get_cards(current_user):
+    """
+    Busca todos os cards do usuário.
+    ---
+    tags:
+      - Cards
+    security:
+      - BasicAuth: []
+    responses:
+      '200':
+        description: Uma lista de cards do usuário.
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                cards:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                      word:
+                        type: string
+                      icon_class:
+                        type: string
+                      card_type:
+                        type: string
+    """
     # Load user's board (only visible cards)
     user_cards = UserCard.query.filter_by(user_id=current_user.id, is_hidden=False).order_by(UserCard.position).all()
     
@@ -149,8 +191,45 @@ def save_board(current_user):
 @bp.route('/api/cards', methods=['POST'])
 @token_required
 def add_card(current_user):
+    """
+    Cadastra um novo card customizado.
+    ---
+    tags:
+      - Cards
+    security:
+      - BasicAuth: []
+    requestBody:
+      required: true
+      content:
+        multipart/form-data:
+          schema:
+            type: object
+            required:
+              - word
+            properties:
+              word:
+                type: string
+                description: A palavra do card (máximo de 2 termos).
+              icon:
+                type: string
+                description: A classe FontAwesome do ícone, ou enviar uma imagem.
+              card_type:
+                type: string
+                description: Categoria do card (ex. noun, verb, connector). Padrão é 'custom'.
+              image_upload:
+                type: string
+                format: binary
+                description: Imagem personalizada (PNG, JPG, máx 500KB, max 300x300px).
+    responses:
+      '200':
+        description: Cadastrado com sucesso.
+      '400':
+        description: Erro de validação.
+    """
     word = request.form.get('word', '').strip()
     icon = request.form.get('icon', '').strip()
+    card_type_in = request.form.get('card_type', '').strip()
+    card_type = card_type_in if card_type_in else 'custom'
     image_file = request.files.get('image_upload')
     
     if not word or len(word.split()) > 2:
@@ -185,7 +264,7 @@ def add_card(current_user):
     if not icon_val:
         return jsonify({'message': 'Você deve escolher um ícone ou enviar uma imagem.'}), 400
         
-    new_card = Card(word=word, icon_class=icon_val, card_type='custom', is_default=False, user_id=current_user.id)
+    new_card = Card(word=word, icon_class=icon_val, card_type=card_type, is_default=False, user_id=current_user.id)
     db.session.add(new_card)
     db.session.flush()
     
@@ -208,9 +287,67 @@ def toggle_visibility(current_user, id):
     db.session.commit()
     return jsonify({'status': 'success'})
 
+@bp.route('/api/cards/<int:id>', methods=['GET'])
+@token_required
+def get_card(current_user, id):
+    """
+    Busca um card específico pelo ID.
+    ---
+    tags:
+      - Cards
+    security:
+      - BasicAuth: []
+    parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+        description: ID do UserCard.
+    responses:
+      '200':
+        description: Detalhes do card.
+      '404':
+        description: Card não encontrado.
+    """
+    uc = UserCard.query.filter_by(id=id, user_id=current_user.id).first()
+    if not uc:
+        return jsonify({'message': 'Card não encontrado.'}), 404
+        
+    card_data = {
+        'id': uc.id,
+        'word': uc.card.word,
+        'icon_class': uc.card.icon_class,
+        'card_type': uc.card.card_type,
+        'is_hidden': uc.is_hidden,
+        'is_default': uc.card.is_default,
+        'user_id_matches': uc.card.user_id == current_user.id
+    }
+    return jsonify({'card': card_data})
+
 @bp.route('/api/cards/<int:id>', methods=['DELETE'])
 @token_required
 def delete_card(current_user, id):
+    """
+    Deleta um card customizado pelo ID.
+    ---
+    tags:
+      - Cards
+    security:
+      - BasicAuth: []
+    parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+        description: ID do UserCard a ser deletado.
+    responses:
+      '200':
+        description: Card deletado com sucesso.
+      '400':
+        description: Card não encontrado ou você não tem permissão para deletá-lo.
+    """
     uc = UserCard.query.filter_by(id=id, user_id=current_user.id).first()
     if uc and uc.card.user_id == current_user.id:
         card = uc.card

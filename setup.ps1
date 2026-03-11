@@ -7,3 +7,10 @@ python -m venv .venv
 & .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 
 Write-Host "Virtual environment created and dependencies installed."
+
+# Inicializa o banco de dados e executa o servidor
+Write-Host "Inicializando o banco de dados..."
+& .\.venv\Scripts\python.exe init_db.py
+
+Write-Host "Iniciando o servidor..."
+& .\.venv\Scripts\python.exe run.py

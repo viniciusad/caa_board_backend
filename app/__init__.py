@@ -3,6 +3,7 @@ from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
 from flask_cors import CORS
+from flasgger import Swagger
 
 db = SQLAlchemy()
 login_manager = LoginManager()
@@ -24,8 +25,35 @@ def create_app():
 
     db.init_app(app)
     login_manager.init_app(app)
+    
+    app.config['SWAGGER'] = {
+        'openapi': '3.0.0',
+        'uiversion': 3
+    }
 
-    # Note: Import models here to ensure they are registered with SQLAlchemy
+    swagger_template = {
+        "info": {
+            "title": "CAA Board API",
+            "description": "API do sistema de Comunicação Alternativa e Ampliada (Cards API).",
+            "version": "1.0.0"
+        },
+        "components": {
+            "securitySchemes": {
+                "BasicAuth": {
+                    "type": "http",
+                    "scheme": "basic",
+                    "description": "Insira seu usuário e senha cadastrados no banco de dados."
+                }
+            }
+        }
+    }
+    
+    swagger_config = Swagger.DEFAULT_CONFIG.copy()
+    swagger_config["specs_route"] = "/api/"
+    
+    Swagger(app, template=swagger_template, config=swagger_config)
+
+    # Import models here to ensure they are registered with SQLAlchemy
     from app import models
 
     from app.routes import bp as main_bp
